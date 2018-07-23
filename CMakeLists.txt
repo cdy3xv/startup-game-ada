@@ -5,8 +5,13 @@ project(ada-game)
 # Requires github.com/offa/cmake-ada
 enable_language(ADA)
 
+set(CMAKE_ADA_FLAGS "${CMAKE_ADA_FLAGS} -gnat05")
+
 set(ALL_SDB_FILES
-    src/employee.adb
+    src/component_pkg.adb
+    src/fuel_system_pkg.adb
+    src/engine_pkg.adb
+    src/tank_pkg.adb
     src/main.adb
     )
 
