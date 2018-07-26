@@ -2,9 +2,11 @@ with Component_Pkg; use Component_Pkg;
 
 package Fuel_System_Pkg is
     type Fuel_Systems is new Components with private;
-    type Fuel_Systems_Acc is access Fuel_Systems;
+    type Fuel_Systems_Acc is access all Fuel_Systems;
 
-    type Fuel_Types is (Metholox, Kerolox,                               -- Semi Cryogenic
+    Fuel_Mismatch_Exception : exception;
+
+    type Fuel_Types is (Metholox, Kerolox,                              -- Semi Cryogenic
                        Hydrolox, Hydrogen,                              -- Cryogenic
                        Aerozine_NTO, UDMH_NTO, MMH_NTO, enBB_HNO3,      -- Storable Hypergols
                        Hydrazine, H2O4, Nitrogen,                       -- Storable Monopropellants
@@ -28,6 +30,7 @@ package Fuel_System_Pkg is
 
     -- Fuel System Specific Methods
     function getFuelType(this : Fuel_Systems) return Fuel_Types;
+    procedure setFuelType(this : in out Fuel_Systems; fuel_type : Fuel_Types);
 
     private
         type Fuel_Systems is new Components with

@@ -1,9 +1,47 @@
 with Ada.Numerics.Generic_Elementary_Functions;
+with Ada.Text_IO; use Ada.Text_IO;
 
 package body Propulsion_Unit_Pkg is
-    procedure addTank(this : in out Propulsion_Units; to_add : Tanks) is
+    procedure checkFuelCompatibility(this : Propulsion_Units; fuel_type : Fuel_Types) is
+        fuel_compatible : Boolean := true;
+
+        procedure check_tank_fuel_type(c : Tank_Vectors.Cursor) is
+            tank : Tanks := Tank_Vectors.Element(c).all;
+        begin
+            if tank.getFuelType /= fuel_type then
+                raise Fuel_Mismatch_Exception;
+            end if;
+        end check_tank_fuel_type;
+
+        procedure check_engine_fuel_type(c : Engine_Vectors.Cursor) is
+            engine : Engines := Engine_Vectors.Element(c);
+        begin
+            if engine.getFuelType /= fuel_type then
+                raise Fuel_Mismatch_Exception;
+            end if;
+        end check_engine_fuel_type;
     begin
+        this.tankage.iterate(check_tank_fuel_type'access);
+        this.engine_cluster.iterate(check_engine_fuel_type'access);
+    end checkFuelCompatibility;
+
+    procedure checkCompletion(this : Propulsion_Units) is
+    begin
+        if this.getNumEngines = 0 then
+            raise Incomplete_Propulsion_Unit;
+        end if;
+        if this.getNumTanks = 0 then
+            raise Incomplete_Propulsion_Unit;
+        end if;
+    end checkCompletion;
+
+    procedure addTank(this : in out Propulsion_Units; to_add : Tanks_Acc) is
+    begin
+        this.checkFuelCompatibility(to_add.getFuelType);
         this.tankage.append(to_add);
+    exception
+        when Fuel_Mismatch_Exception =>
+            raise;
     end addTank;
 
 
@@ -15,7 +53,7 @@ package body Propulsion_Unit_Pkg is
 
     function getTank(this : Propulsion_Units; index : Natural) return Tanks is
     begin
-        return this.tankage.element(index);
+        return this.tankage.element(index).all;
     end getTank;
 
 
@@ -27,7 +65,11 @@ package body Propulsion_Unit_Pkg is
 
     procedure addEngine(this : in out Propulsion_Units; to_add : Engines) is
     begin
+        this.checkFuelCompatibility(to_add.getFuelType);
         this.engine_cluster.append(to_add);
+    exception
+        when Fuel_Mismatch_Exception =>
+            raise;
     end addEngine;
 
 
@@ -50,11 +92,11 @@ package body Propulsion_Unit_Pkg is
 
 
     overriding
-    function getCost(this : Propulsion_Units) return Float is
-        total_cost : Float := Components(this).getCost;
+    function getCost(this : Propulsion_Units) return Dollars is
+        total_cost : Dollars := Components(this).getCost;
 
         procedure add_tank_cost(c : Tank_Vectors.Cursor) is
-            tank : Tanks := Tank_Vectors.Element(c);
+            tank : Tanks := Tank_Vectors.Element(c).all;
         begin
             total_cost := total_cost + tank.getCost;
         end add_tank_cost;
@@ -73,11 +115,11 @@ package body Propulsion_Unit_Pkg is
 
 
     overriding
-    function getDryMass(this : Propulsion_Units) return Float is
-        total_mass : Float := Components(this).getDryMass;
+    function getDryMass(this : Propulsion_Units) return Mass is
+        total_mass : Mass := Components(this).getDryMass;
 
         procedure add_tank_mass(c : Tank_Vectors.Cursor) is
-            tank : Tanks := Tank_Vectors.Element(c);
+            tank : Tanks := Tank_Vectors.Element(c).all;
         begin
             total_mass := total_mass + tank.getDryMass;
         end add_tank_mass;
@@ -100,7 +142,7 @@ package body Propulsion_Unit_Pkg is
         total_reliability : Rel_Ratio := Components(this).getReliability;
 
         procedure add_tank_reliability(c : Tank_Vectors.Cursor) is
-            tank : Tanks := Tank_Vectors.Element(c);
+            tank : Tanks := Tank_Vectors.Element(c).all;
         begin
             total_reliability := total_reliability * tank.getReliability;
         end add_tank_reliability;
@@ -118,45 +160,90 @@ package body Propulsion_Unit_Pkg is
     end getReliability;
 
 
-    function getAslIsp(this : Propulsion_Units) return Float is
-        total_isp : Float := 0.0;
-        total_thrust : Float := this.getMaxThrustAsl;
+    function getAslIsp(this : Propulsion_Units; throttle : Engine_Throttle := 1.0) return Time is
+        desired_thrust : Force := throttle * this.getMaxThrustAsl;
+        achieved_thrust : Force := 0.0 * kN;
+        total_isp : Time := 0.0 * s;
 
-        procedure add_weighted_isp(c : Engine_Vectors.Cursor) is
+        procedure tryToThrottle(c : Engine_Vectors.Cursor) is
             engine : Engines := Engine_Vectors.Element(c);
+            actual_throttle : Engine_Throttle;
         begin
-            total_isp := total_isp + engine.getAslIsp * engine.getMaxThrustAsl / total_thrust;
-        end add_weighted_isp;
+            begin
+                actual_throttle := (desired_thrust - achieved_thrust) / engine.getMaxThrustVac;
+            exception
+                when Constraint_Error => actual_throttle := 1.0;
+            end;
+
+            if actual_throttle > 0.0 then
+                begin
+                    total_isp := total_isp + engine.getAslIsp * engine.getThrustAsl(throttle) / desired_thrust;
+                    achieved_thrust := achieved_thrust + engine.getMaxThrustVac * actual_throttle;
+                exception
+                    when Minimum_Throttle_Exceeded =>
+                        actual_throttle := engine.getMinThrustVac / engine.getMaxThrustVac;
+                        total_isp := total_isp + engine.getAslIsp * engine.getThrustAsl(throttle) / desired_thrust;
+                        achieved_thrust := achieved_thrust + engine.getMaxThrustVac * actual_throttle;
+                end;
+            end if;
+        end tryToThrottle;
     begin
-        this.engine_cluster.iterate(add_weighted_isp'access);
+        this.engine_cluster.iterate(tryToThrottle'access);
+
+        if achieved_thrust /= desired_thrust then
+            raise Minimum_Throttle_Exceeded;
+        end if;
 
         return total_isp;
     end getAslIsp;
 
 
-    function getVacIsp(this : Propulsion_Units) return Float is
-        total_isp : Float := 0.0;
-        total_thrust : Float := this.getMaxThrustVac;
+    function getVacIsp(this : Propulsion_Units; throttle : Engine_Throttle := 1.0) return Time is
+        desired_thrust : Force := throttle * this.getMaxThrustVac;
+        achieved_thrust : Force := 0.0 * kN;
+        total_isp : Time := 0.0 * s;
 
-        procedure add_weighted_isp(c : Engine_Vectors.Cursor) is
+        procedure tryToThrottle(c : Engine_Vectors.Cursor) is
             engine : Engines := Engine_Vectors.Element(c);
+            actual_throttle : Engine_Throttle;
         begin
-            total_isp := total_isp + engine.getVacIsp * engine.getMaxThrustVac / total_thrust;
-        end add_weighted_isp;
+            begin
+                actual_throttle := (desired_thrust - achieved_thrust) / engine.getMaxThrustVac;
+            exception
+                when Constraint_Error => actual_throttle := 1.0;
+            end;
+
+            if actual_throttle > 0.0 then
+                begin
+                    total_isp := total_isp + engine.getVacIsp * engine.getThrustVac(throttle) / desired_thrust;
+                    achieved_thrust := achieved_thrust + engine.getMaxThrustVac * actual_throttle;
+                exception
+                    when Minimum_Throttle_Exceeded =>
+                        actual_throttle := engine.getMinThrustVac / engine.getMaxThrustVac;
+                        total_isp := total_isp + engine.getVacIsp * engine.getThrustVac(throttle) / desired_thrust;
+                        achieved_thrust := achieved_thrust + engine.getMaxThrustVac * actual_throttle;
+                end;
+            end if;
+        end tryToThrottle;
     begin
-        this.engine_cluster.iterate(add_weighted_isp'access);
+
+        this.engine_cluster.iterate(tryToThrottle'access);
+
+        if achieved_thrust /= desired_thrust then
+            raise Minimum_Throttle_Exceeded;
+        end if;
 
         return total_isp;
     end getVacIsp;
 
 
-    function getFuelMass(this : Propulsion_Units) return Float is
-        total_mass : Float := 0.0;
+    function getFuelMass(this : Propulsion_Units; fuel_load : Tank_Load := 1.0) return Mass is
+        total_mass : Mass := 0.0 * kg;
 
         procedure add_fuel_mass(c : Tank_Vectors.Cursor) is
-            tank : Tanks := Tank_Vectors.Element(c);
+            tank : Tanks := Tank_Vectors.Element(c).all;
         begin
-            total_mass := total_mass + tank.getFuelMass;
+            total_mass := total_mass + tank.getFuelMass(fuel_load);
         end add_fuel_mass;
     begin
         this.tankage.iterate(add_fuel_mass'access);
@@ -165,16 +252,16 @@ package body Propulsion_Unit_Pkg is
     end getFuelMass;
 
 
-    function getWetMass(this : Propulsion_Units) return Float is
-        dry_mass : Float := this.getDryMass;
-        fuel_mass : Float := this.getFuelMass;
+    function getWetMass(this : Propulsion_Units; fuel_load : Tank_Load := 1.0) return Mass is
+        dry_mass : Mass := this.getDryMass;
+        fuel_mass : Mass := this.getFuelMass(fuel_load);
     begin
         return dry_mass + fuel_mass;
     end getWetMass;
 
 
-    function getMaxThrustAsl(this : Propulsion_Units) return Float is
-        total_thrust : Float := 0.0;
+    function getMaxThrustAsl(this : Propulsion_Units) return Force is
+        total_thrust : Force := 0.0 * kN;
 
         procedure add_engine_thrust(c : Engine_Vectors.Cursor) is
             engine : Engines := Engine_Vectors.Element(c);
@@ -188,8 +275,8 @@ package body Propulsion_Unit_Pkg is
     end getMaxThrustAsl;
 
 
-    function getMinThrustAsl(this : Propulsion_Units) return Float is
-        min_thrust : Float := this.getMaxThrustAsl;
+    function getMinThrustAsl(this : Propulsion_Units) return Force is
+        min_thrust : Force := this.getMaxThrustAsl;
 
         procedure check_min_thrust(c : Engine_Vectors.Cursor) is
             engine : Engines := Engine_Vectors.Element(c);
@@ -205,8 +292,8 @@ package body Propulsion_Unit_Pkg is
     end getMinThrustAsl;
 
 
-    function getMaxThrustVac(this : Propulsion_Units) return Float is
-        total_thrust : Float := 0.0;
+    function getMaxThrustVac(this : Propulsion_Units) return Force is
+        total_thrust : Force := 0.0 * kg*m/(s**2);
 
         procedure add_engine_thrust(c : Engine_Vectors.Cursor) is
             engine : Engines := Engine_Vectors.Element(c);
@@ -220,8 +307,8 @@ package body Propulsion_Unit_Pkg is
     end getMaxThrustVac;
 
 
-    function getMinThrustVac(this : Propulsion_Units) return Float is
-        min_thrust : Float := this.getMaxThrustVac;
+    function getMinThrustVac(this : Propulsion_Units) return Force is
+        min_thrust : Force := this.getMaxThrustVac;
 
         procedure check_min_thrust(c : Engine_Vectors.Cursor) is
             engine : Engines := Engine_Vectors.Element(c);
@@ -243,101 +330,79 @@ package body Propulsion_Unit_Pkg is
     end getFuelType;
 
 
-    function getAslDeltaV(this : Propulsion_Units; added_mass : Float := 0.0) return Float is
-        package Float_Functions is new Ada.Numerics.Generic_Elementary_Functions(Float);
-        use Float_Functions;
+    function getAslDeltaV(this : Propulsion_Units; added_mass : Mass := 0.0 * kg;
+                            fuel_load : Tank_Load := 1.0;
+                            throttle : Engine_Throttle := 1.0) return Velocity is
+        package Mks_Functions is new Ada.Numerics.Generic_Elementary_Functions(Mks_Type);
+        use Mks_Functions;
 
-        dry_mass : Float := this.getDryMass;
-        wet_mass : Float := this.getWetMass;
-        isp : Float := this.getAslIsp;
+        dry_mass : Mass := this.getDryMass;
+        wet_mass : Mass := this.getWetMass(fuel_load);
+        isp : Time := this.getAslIsp(throttle);
     begin
-        return isp * Log(wet_mass / dry_mass) * 9.80665;
+        return isp * Log(wet_mass / dry_mass) * gravity;
     end getAslDeltaV;
 
 
-    function getVacDeltaV(this : Propulsion_Units; added_mass : Float := 0.0) return Float is
-        package Float_Functions is new Ada.Numerics.Generic_Elementary_Functions(Float);
-        use Float_Functions;
+    function getVacDeltaV(this : Propulsion_Units; added_mass : Mass := 0.0 * kg;
+                            fuel_load : Tank_Load := 1.0;
+                            throttle : Engine_Throttle := 1.0) return Velocity is
+        package Mks_Functions is new Ada.Numerics.Generic_Elementary_Functions(Mks_Type);
+        use Mks_Functions;
 
-        dry_mass : Float := this.getDryMass;
-        wet_mass : Float := this.getWetMass;
-        isp : Float := this.getVacIsp;
+        dry_mass : Mass := this.getDryMass;
+        wet_mass : Mass := this.getWetMass(fuel_load);
+        isp : Time := this.getVacIsp(throttle);
     begin
-        return isp * Log(wet_mass / dry_mass) * 9.80665;
+        return isp * Log(wet_mass / dry_mass) * gravity;
     end getVacDeltaV;
 
 
-    function getMassFlowRate(this : Propulsion_Units; throttle : Engine_Throttle) return Float is
-        engine_count, engine_count_tmp : Natural := Natural(this.engine_cluster.length);
-        desired_thrust : Float;
-        available_thrust, available_thrust_tmp : Float := this.getMaxThrustVac;
-        achieved_thrust : Float := 0.0;
-        required_thrust, required_thrust_tmp : Float := 0.0;
-        mass_flow_rate : Float;
-        engine_shutdowns_required, engine_shutdowns_achieved : Natural := 0;
-        working_throttle : Engine_Throttle := throttle;
-        engine_cluster_copy : Engine_Vectors.Vector := this.engine_cluster;
-
-        function engineSortByLargestMinThrust(L, R : Engines) return Boolean is
-        begin
-            return L.getMinThrustVac > R.getMinThrustVac;
-        end engineSortByLargestMinThrust;
-
-        package Engine_Sorter is new Engine_Vectors.Generic_Sorting(engineSortByLargestMinThrust);
+    function getMassFlowRate(this : Propulsion_Units; throttle : Engine_Throttle) return Mass_Flow is
+        desired_thrust : Force;
+        achieved_thrust : Force := 0.0 * kN;
+        mass_flow_rate : Mass_Flow;
 
         procedure tryToThrottle(c : Engine_Vectors.Cursor) is
             engine : Engines := Engine_Vectors.Element(c);
+            actual_throttle : Engine_Throttle;
         begin
-            mass_flow_rate := mass_flow_rate + engine.getMassFlowRate(working_throttle);
-            achieved_thrust := achieved_thrust + engine.getMaxThrustVac * working_throttle;
-        exception
-            when Minimum_Throttle_Exceeded =>
-                required_thrust_tmp := required_thrust_tmp + engine.getMinThrustVac;
-                achieved_thrust := achieved_thrust + engine.getMinThrustVac;
-                mass_flow_rate := mass_flow_rate + engine.getMassFlowRate(engine.getMinThrustVac / engine.getMaxThrustVac);
-                engine_count_tmp := engine_count_tmp - 1;
+            begin
+                actual_throttle := (desired_thrust - achieved_thrust) / engine.getMaxThrustVac;
+            exception
+                when Constraint_Error => actual_throttle := 1.0;
+            end;
+
+            if actual_throttle > 0.0 then
+                begin
+                    mass_flow_rate := mass_flow_rate + engine.getMassFlowRate(actual_throttle);
+                    achieved_thrust := achieved_thrust + engine.getMaxThrustVac * actual_throttle;
+                exception
+                    when Minimum_Throttle_Exceeded =>
+                        actual_throttle := engine.getMinThrustVac / engine.getMaxThrustVac;
+                        mass_flow_rate := mass_flow_rate + engine.getMassFlowRate(actual_throttle);
+                        achieved_thrust := achieved_thrust + engine.getMaxThrustVac * actual_throttle;
+                end;
+            end if;
         end tryToThrottle;
     begin
-        if throttle < this.getMinThrustVac / this.getMaxThrustVac then
+        desired_thrust := throttle * this.getMaxThrustVac;
+
+        this.engine_cluster.iterate(tryToThrottle'access);
+
+        if achieved_thrust /= desired_thrust then
             raise Minimum_Throttle_Exceeded;
-        else
-            desired_thrust := throttle * this.getMaxThrustVac;
         end if;
-
-        Engine_Sorter.Sort(engine_cluster_copy);
-
-        loop
-            mass_flow_rate := 0.0;
-            achieved_thrust := 0.0;
-            engine_shutdowns_achieved := 0;
-
-            this.engine_cluster.iterate(tryToThrottle'access);
-
-            required_thrust := required_thrust_tmp;
-            engine_count := engine_count_tmp;
-            if required_thrust > desired_thrust then
-                engine_shutdowns_required := engine_shutdowns_required + 1;
-                engine_count := Natural(this.engine_cluster.length) - engine_shutdowns_required;
-                engine_count_tmp := engine_count;
-                required_thrust := 0.0;
-                required_thrust_tmp := required_thrust;
-                available_thrust := available_thrust - this.engine_cluster.element(engine_shutdowns_required - 1).getMaxThrustVac;
-            end if;
-
-            working_throttle := (desired_thrust - required_thrust) / available_thrust;
-
-            exit when achieved_thrust = desired_thrust;
-        end loop;
 
         return mass_flow_rate;
     end getMassFlowRate;
 
 
-    function getBurnTime(this : Propulsion_Units; throttle : Engine_Throttle) return Float is
-        mass_flow_rate : Float;
-        fuel_mass : Float := getFuelMass(this);
+    function getBurnTime(this : Propulsion_Units; throttle : Engine_Throttle) return Time is
+        mass_flow_rate : Mass_Flow;
+        fuel_mass : Mass := this.getFuelMass;
     begin
-        mass_flow_rate := getMassFlowRate(this, throttle);
+        mass_flow_rate := this.getMassFlowRate(throttle);
         return fuel_mass / mass_flow_rate;
     end getBurnTime;
 end Propulsion_Unit_Pkg;

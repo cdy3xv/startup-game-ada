@@ -5,7 +5,7 @@ project(ada-game)
 # Requires github.com/offa/cmake-ada
 enable_language(ADA)
 
-set(CMAKE_ADA_FLAGS "${CMAKE_ADA_FLAGS} -gnat05")
+set(CMAKE_ADA_FLAGS "${CMAKE_ADA_FLAGS} -gnat12")
 
 set(ALL_SDB_FILES
     src/component_pkg.adb
