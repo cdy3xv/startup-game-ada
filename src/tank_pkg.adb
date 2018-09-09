@@ -1,3 +1,5 @@
+with Component_Pkg; use Component_Pkg;
+
 package body Tank_Pkg is
     function getFuelCapacity(this : Tanks) return Mass is
     begin
@@ -29,4 +31,10 @@ package body Tank_Pkg is
     begin
         return this.getFuelCapacity * load;
     end getFuelMass;
+
+    procedure free(this : in out Tanks_Acc) is
+        comp_acc : Components_Acc := this.all'Access;
+    begin
+        free(comp_acc);
+    end free;
 end Tank_Pkg;

@@ -44,8 +44,10 @@ package Propulsion_Unit_Pkg is
     function getWetMass(this : Propulsion_Units; fuel_load : Tank_Load := 1.0) return Mass;         -- kg
     function getMaxThrustAsl(this : Propulsion_Units) return Force;                                 -- kN
     function getMinThrustAsl(this : Propulsion_Units) return Force;                                 -- kN
+    function getThrustAsl(this : Propulsion_Units; throttle : Engine_Throttle) return Force;                                 -- kN
     function getMaxThrustVac(this : Propulsion_Units) return Force;                                 -- kN
     function getMinThrustVac(this : Propulsion_Units) return Force;                                 -- kN
+    function getThrustVac(this : Propulsion_Units; throttle : Engine_Throttle) return Force;                                 -- kN
     function getFuelType(this : Propulsion_Units) return Fuel_Types;
     function getAslDeltaV(this : Propulsion_Units;
                             added_mass : Mass := 0.0 * kg;
@@ -54,6 +56,13 @@ package Propulsion_Unit_Pkg is
     function getVacDeltaV(this : Propulsion_Units; added_mass : Mass := 0.0 * kg;
                             fuel_load : Tank_Load := 1.0;
                             throttle : Engine_Throttle := 1.0) return Velocity;  -- m/s
+    function getAslTWR(this : Propulsion_Units;
+                            added_mass : Mass := 0.0 * kg;
+                            fuel_load : Tank_Load := 1.0;
+                            throttle : Engine_Throttle := 1.0) return Mks_Type;
+    function getVacTWR(this : Propulsion_Units; added_mass : Mass := 0.0 * kg;
+                            fuel_load : Tank_Load := 1.0;
+                            throttle : Engine_Throttle := 1.0) return Mks_Type;
     function getMassFlowRate(this : Propulsion_Units; throttle : Engine_Throttle) return Mass_Flow; -- kg/s
     function getBurnTime(this : Propulsion_Units; throttle : Engine_Throttle) return Time;          -- sec
 

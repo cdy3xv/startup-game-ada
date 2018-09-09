@@ -4,12 +4,17 @@ with System.Dim.Mks_IO; use System.Dim.Mks_IO;
 
 with Constants_And_Units; use Constants_And_Units;
 with Text_IO; use Text_IO;
+with Component_Pkg; use Component_Pkg;
 with Fuel_System_Pkg; use Fuel_System_Pkg;
 with Engine_Pkg; use Engine_Pkg;
 with Tank_Pkg; use Tank_Pkg;
 with Propulsion_Unit_Pkg; use Propulsion_Unit_Pkg;
 
+with Ada.Containers.Vectors; use Ada.Containers;
+
 procedure Main is
+    Package Tank_Vectors is new Vectors(Natural, Tanks);
+
     Package Dollars_IO is new Text_IO.Float_IO(Dollars);
     use Dollars_IO;
     Package Float_IO is new Text_IO.Float_IO(Float);
@@ -33,11 +38,11 @@ begin
     SIC_Tank.setReliability(0.999);
     SIC_Tank.setCost(4000000.0);
     SIC_Tank.setBoiloffRate(0.0 * kg / s);
-    SIC_Tank.setFuelCapacity(2077.1416 * tonnes);
+    SIC_Tank.setFuelCapacity(2122.8916 * tonnes);
     SIC_Tank.setFuelType(Kerolox);
 
     -- Assemble The Rocket!
-    SIC.setDryMass(156.1084 * tonnes); -- Structure + Solid Retrograde Separation Motors + Fins
+    SIC.setDryMass(110.3584 * tonnes); -- Structure + Solid Retrograde Separation Motors + Fins
     SIC.setReliability(0.999999);
     SIC.setCost(167500000.0);
     loop
@@ -76,5 +81,13 @@ begin
     Put_line("");
     Put(SIC.getAslDeltaV(0.0 * kg), Aft => 3, Exp => 0);
     Put_line("");
+    Put(SIC.getAslDeltaV(680.0 * tonnes), Aft => 3, Exp => 0);
+    Put_line("");
+    Put(SIC.getAslTWR(0.0 * kg), Aft => 3, Exp => 0);
+    Put_line("");
+    Put(SIC.getAslTWR(680.0 * tonnes), Aft => 3, Exp => 0);
+    Put_line("");
     Put_line(Fuel_Types'Image(SIC.getFuelType));
+
+    free(SIC_Tank);
 end Main;

@@ -3,7 +3,7 @@ with Constants_And_Units; use Constants_And_Units;
 
 package Component_Pkg is
     type Components is tagged private;
-    type Components_Acc is access all Components;
+    type Components_Acc is access all Components'Class;
 
     subtype Rel_Ratio is Float range 0.0 .. 1.0;
 
@@ -14,6 +14,8 @@ package Component_Pkg is
     procedure setDryMass(this : in out Components; dry_mass : Mass);
     function getReliability(this : Components) return Rel_Ratio;
     procedure setReliability(this : in out Components; reliability : Rel_Ratio);
+
+    procedure free(this : in out Components_Acc);
 
     private
         type Components is tagged

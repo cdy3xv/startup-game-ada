@@ -21,6 +21,12 @@ package Constants_And_Units is
                             Second  => -1,
                             others  => 0);
 
+    subtype Density is Mks_Type
+        with Dimension => ("kg/m^3",
+                            Kilogram=> 1,
+                            Meter   => -3,
+                            others  => 0);
+
 
 
     gravity : constant Acceleration := 9.81 * m/(s**2);

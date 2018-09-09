@@ -17,6 +17,8 @@ package Tank_Pkg is
     function getBoiloffTime(this : Tanks) return Time;
     function getFuelMass(this : Tanks; load : Tank_Load := 1.0) return Mass;
 
+    procedure free(this : in out Tanks_Acc);
+
     private
         type Tanks is new Fuel_Systems with
             record

@@ -1,3 +1,7 @@
+with Unchecked_Deallocation;
+
+with Text_IO; use Text_IO;
+
 package body Component_Pkg is
     function getCost(this : Components) return Dollars is
     begin
@@ -28,4 +32,11 @@ package body Component_Pkg is
     begin
         this.reliability := reliability;
     end setReliability;
+
+    procedure delete is new Unchecked_Deallocation(Object => Components'Class, Name => Components_Acc);
+
+    procedure free(this : in out Components_Acc) is
+    begin
+        delete(this);
+    end free;
 end Component_Pkg;

@@ -1,6 +1,10 @@
 with Ada.Numerics.Generic_Elementary_Functions;
 with Ada.Text_IO; use Ada.Text_IO;
 
+
+with System.Dim.Mks_IO; use System.Dim.Mks_IO;
+with Text_IO; use Text_IO;
+
 package body Propulsion_Unit_Pkg is
     procedure checkFuelCompatibility(this : Propulsion_Units; fuel_type : Fuel_Types) is
         fuel_compatible : Boolean := true;
@@ -292,6 +296,42 @@ package body Propulsion_Unit_Pkg is
     end getMinThrustAsl;
 
 
+    function getThrustAsl(this : Propulsion_Units; throttle : Engine_Throttle) return Force is
+        desired_thrust : Force;
+        achieved_thrust : Force := 0.0 * kN;
+
+        procedure tryToThrottle(c : Engine_Vectors.Cursor) is
+            engine : Engines := Engine_Vectors.Element(c);
+            actual_throttle : Engine_Throttle;
+        begin
+            begin
+                actual_throttle := (desired_thrust - achieved_thrust) / engine.getMaxThrustAsl;
+            exception
+                when Constraint_Error => actual_throttle := 1.0;
+            end;
+
+            if actual_throttle > 0.0 then
+                begin
+                    achieved_thrust := achieved_thrust + engine.getThrustAsl(actual_throttle);
+                exception
+                    when Minimum_Throttle_Exceeded =>
+                        achieved_thrust := achieved_thrust + engine.getMinThrustAsl;
+                end;
+            end if;
+        end tryToThrottle;
+    begin
+        desired_thrust := throttle * this.getMaxThrustAsl;
+
+        this.engine_cluster.iterate(tryToThrottle'access);
+
+        if achieved_thrust /= desired_thrust then
+            raise Minimum_Throttle_Exceeded;
+        end if;
+
+        return achieved_thrust;
+    end getThrustAsl;
+
+
     function getMaxThrustVac(this : Propulsion_Units) return Force is
         total_thrust : Force := 0.0 * kg*m/(s**2);
 
@@ -324,6 +364,42 @@ package body Propulsion_Unit_Pkg is
     end getMinThrustVac;
 
 
+    function getThrustVac(this : Propulsion_Units; throttle : Engine_Throttle) return Force is
+        desired_thrust : Force;
+        achieved_thrust : Force := 0.0 * kN;
+
+        procedure tryToThrottle(c : Engine_Vectors.Cursor) is
+            engine : Engines := Engine_Vectors.Element(c);
+            actual_throttle : Engine_Throttle;
+        begin
+            begin
+                actual_throttle := (desired_thrust - achieved_thrust) / engine.getMaxThrustVac;
+            exception
+                when Constraint_Error => actual_throttle := 1.0;
+            end;
+
+            if actual_throttle > 0.0 then
+                begin
+                    achieved_thrust := achieved_thrust + engine.getThrustVac(actual_throttle);
+                exception
+                    when Minimum_Throttle_Exceeded =>
+                        achieved_thrust := achieved_thrust + engine.getMinThrustVac;
+                end;
+            end if;
+        end tryToThrottle;
+    begin
+        desired_thrust := throttle * this.getMaxThrustVac;
+
+        this.engine_cluster.iterate(tryToThrottle'access);
+
+        if achieved_thrust /= desired_thrust then
+            raise Minimum_Throttle_Exceeded;
+        end if;
+
+        return achieved_thrust;
+    end getThrustVac;
+
+
     function getFuelType(this : Propulsion_Units) return Fuel_Types is
     begin
         return this.tankage.first_element.getFuelType;
@@ -336,8 +412,8 @@ package body Propulsion_Unit_Pkg is
         package Mks_Functions is new Ada.Numerics.Generic_Elementary_Functions(Mks_Type);
         use Mks_Functions;
 
-        dry_mass : Mass := this.getDryMass;
-        wet_mass : Mass := this.getWetMass(fuel_load);
+        dry_mass : Mass := this.getDryMass + added_mass;
+        wet_mass : Mass := this.getWetMass(fuel_load) + added_mass;
         isp : Time := this.getAslIsp(throttle);
     begin
         return isp * Log(wet_mass / dry_mass) * gravity;
@@ -350,12 +426,30 @@ package body Propulsion_Unit_Pkg is
         package Mks_Functions is new Ada.Numerics.Generic_Elementary_Functions(Mks_Type);
         use Mks_Functions;
 
-        dry_mass : Mass := this.getDryMass;
-        wet_mass : Mass := this.getWetMass(fuel_load);
+        dry_mass : Mass := this.getDryMass + added_mass;
+        wet_mass : Mass := this.getWetMass(fuel_load) + added_mass;
         isp : Time := this.getVacIsp(throttle);
     begin
         return isp * Log(wet_mass / dry_mass) * gravity;
     end getVacDeltaV;
+
+
+    function getAslTWR(this : Propulsion_Units;
+                            added_mass : Mass := 0.0 * kg;
+                            fuel_load : Tank_Load := 1.0;
+                            throttle : Engine_Throttle := 1.0) return Mks_Type is
+    begin
+        return this.getThrustAsl(throttle) / (gravity * (this.getWetMass(fuel_load) + added_mass));
+    end getAslTWR;
+
+
+    function getVacTWR(this : Propulsion_Units;
+                            added_mass : Mass := 0.0 * kg;
+                            fuel_load : Tank_Load := 1.0;
+                            throttle : Engine_Throttle := 1.0) return Mks_Type is
+    begin
+        return this.getThrustVac(throttle) / (gravity * (this.getWetMass(fuel_load) + added_mass));
+    end getVacTWR;
 
 
     function getMassFlowRate(this : Propulsion_Units; throttle : Engine_Throttle) return Mass_Flow is
@@ -376,12 +470,12 @@ package body Propulsion_Unit_Pkg is
             if actual_throttle > 0.0 then
                 begin
                     mass_flow_rate := mass_flow_rate + engine.getMassFlowRate(actual_throttle);
-                    achieved_thrust := achieved_thrust + engine.getMaxThrustVac * actual_throttle;
+                    achieved_thrust := achieved_thrust + engine.getThrustVac(actual_throttle);
                 exception
                     when Minimum_Throttle_Exceeded =>
                         actual_throttle := engine.getMinThrustVac / engine.getMaxThrustVac;
                         mass_flow_rate := mass_flow_rate + engine.getMassFlowRate(actual_throttle);
-                        achieved_thrust := achieved_thrust + engine.getMaxThrustVac * actual_throttle;
+                        achieved_thrust := achieved_thrust + engine.getMinThrustVac;
                 end;
             end if;
         end tryToThrottle;

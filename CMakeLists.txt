@@ -12,6 +12,7 @@ set(ALL_SDB_FILES
     src/fuel_system_pkg.adb
     src/engine_pkg.adb
     src/tank_pkg.adb
+    src/liquid_fuel_pkg.adb
     src/main.adb
     )
 
